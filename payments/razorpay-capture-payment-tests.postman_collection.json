@@ -1,0 +1,278 @@
+{
+  "info": {
+    "name": "Razorpay Payments API - Capture a Payment",
+    "description": "Tests POST /payments/{id}/capture. Test 01 needs a REAL payment id in 'authorized' state, obtained via generate-test-payment.html (see README section on this) and pasted into the authorizedPaymentId environment variable. Everything downstream of test 01 depends on it. Some documented errors (approver pending, concurrent operation in progress) cannot be reliably triggered on demand and are listed as known gaps rather than faked.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "basic",
+    "basic": [
+      { "key": "username", "value": "{{razorpayKeyId}}" },
+      { "key": "password", "value": "{{razorpayKeySecret}}" }
+    ]
+  },
+  "item": [
+    {
+      "name": "01 - Fetch the authorized payment (confirm starting state)",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/payments/{{authorizedPaymentId}}"
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test(\"Status is 200 OK\", () => pm.response.to.have.status(200));",
+          "",
+          "pm.test(\"Payment is authorized and not yet captured\", () => {",
+          "    const body = pm.response.json();",
+          "    pm.expect(body.status).to.eql(\"authorized\");",
+          "    // Save the real authorized amount so later tests can deliberately",
+          "    // send a DIFFERENT amount, instead of guessing a number.",
+          "    pm.environment.set(\"authorizedAmount\", body.amount);",
+          "    pm.environment.set(\"paymentCurrency\", body.currency);",
+          "});",
+          "",
+          "// If this fails with status something other than 'authorized', stop —",
+          "// every test below assumes this starting state. Most likely cause:",
+          "// the order was created without payment_capture:0, so Razorpay",
+          "// auto-captured it already. See the README."
+        ]}
+      }]
+    },
+    {
+      "name": "02 - Capture amount that doesn't match authorized amount",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/payments/{{authorizedPaymentId}}/capture",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount\": 1,\n  \"currency\": \"{{paymentCurrency}}\"\n}"
+        }
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test(\"Status is 400 Bad Request\", () => pm.response.to.have.status(400));",
+          "",
+          "pm.test(\"Error matches: 'Capture amount must be equal to the amount authorized'\", () => {",
+          "    const body = pm.response.json();",
+          "    const message = (body.error && body.error.description) ? body.error.description.toLowerCase() : \"\";",
+          "    pm.expect(message).to.include(\"equal to the amount authorized\");",
+          "});",
+          "",
+          "// Sends amount: 1, which will essentially never equal the real",
+          "// authorized amount, so this test doesn't need to know that value."
+        ]}
+      }]
+    },
+    {
+      "name": "03 - Capture with missing amount key",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/payments/{{authorizedPaymentId}}/capture",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"currency\": \"{{paymentCurrency}}\"\n}"
+        }
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test(\"Status is 400 Bad Request\", () => pm.response.to.have.status(400));",
+          "",
+          "pm.test(\"Error matches: 'amount: required key is missing'\", () => {",
+          "    const body = pm.response.json();",
+          "    const message = (body.error && body.error.description) ? body.error.description.toLowerCase() : \"\";",
+          "    pm.expect(message).to.include(\"required key is missing\");",
+          "});",
+          "",
+          "// Distinct from test 04 below: this is the FIELD ABSENT case.",
+          "// Test 04 is the FIELD PRESENT BUT EMPTY case. Different messages",
+          "// per your screenshot, so they need separate tests."
+        ]}
+      }]
+    },
+    {
+      "name": "04 - Capture with blank amount value",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/payments/{{authorizedPaymentId}}/capture",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount\": \"\",\n  \"currency\": \"{{paymentCurrency}}\"\n}"
+        }
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test(\"Status is 400 Bad Request\", () => pm.response.to.have.status(400));",
+          "",
+          "pm.test(\"Error matches: 'amount: cannot be blank'\", () => {",
+          "    const body = pm.response.json();",
+          "    const message = (body.error && body.error.description) ? body.error.description.toLowerCase() : \"\";",
+          "    pm.expect(message).to.include(\"cannot be blank\");",
+          "});"
+        ]}
+      }]
+    },
+    {
+      "name": "05 - Capture with non-integer amount",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/payments/{{authorizedPaymentId}}/capture",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount\": 500.5,\n  \"currency\": \"{{paymentCurrency}}\"\n}"
+        }
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test(\"Status is 400 Bad Request\", () => pm.response.to.have.status(400));",
+          "",
+          "pm.test(\"Error matches: 'The amount must be an integer'\", () => {",
+          "    const body = pm.response.json();",
+          "    const message = (body.error && body.error.description) ? body.error.description.toLowerCase() : \"\";",
+          "    pm.expect(message).to.include(\"must be an integer\");",
+          "});"
+        ]}
+      }]
+    },
+    {
+      "name": "06 - Capture with mismatched currency",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/payments/{{authorizedPaymentId}}/capture",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount\": {{authorizedAmount}},\n  \"currency\": \"USD\"\n}"
+        }
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test(\"Status is 400 Bad Request\", () => pm.response.to.have.status(400));",
+          "",
+          "pm.test(\"Error matches: 'Capture request currency must be same as payment currency'\", () => {",
+          "    const body = pm.response.json();",
+          "    const message = (body.error && body.error.description) ? body.error.description.toLowerCase() : \"\";",
+          "    pm.expect(message).to.include(\"same as payment currency\");",
+          "});",
+          "",
+          "// Only meaningful if paymentCurrency (saved in test 01) is NOT USD —",
+          "// if you're testing an INR payment, this works as-is."
+        ]}
+      }]
+    },
+    {
+      "name": "07 - Capture successfully (valid amount and currency)",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/payments/{{authorizedPaymentId}}/capture",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount\": {{authorizedAmount}},\n  \"currency\": \"{{paymentCurrency}}\"\n}"
+        }
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test(\"Status is 200 OK\", () => pm.response.to.have.status(200));",
+          "",
+          "pm.test(\"Payment status changes to captured\", () => {",
+          "    const body = pm.response.json();",
+          "    pm.expect(body.status).to.eql(\"captured\");",
+          "    pm.expect(body.amount).to.eql(Number(pm.environment.get(\"authorizedAmount\")));",
+          "});",
+          "",
+          "// This must run AFTER tests 02-06 (which all fail on purpose) and",
+          "// BEFORE test 08 (which needs this payment to already be captured)."
+        ]}
+      }]
+    },
+    {
+      "name": "08 - Capture the same payment a second time",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/payments/{{authorizedPaymentId}}/capture",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount\": {{authorizedAmount}},\n  \"currency\": \"{{paymentCurrency}}\"\n}"
+        }
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test(\"Status is 400 Bad Request\", () => pm.response.to.have.status(400));",
+          "",
+          "pm.test(\"Error matches: 'payment has already been either captured or voided'\", () => {",
+          "    const body = pm.response.json();",
+          "    const message = (body.error && body.error.description) ? body.error.description.toLowerCase() : \"\";",
+          "    pm.expect(message).to.include(\"already been\");",
+          "});",
+          "",
+          "// This test only works because test 07 ran first and actually",
+          "// captured the payment. Collection order matters here."
+        ]}
+      }]
+    },
+    {
+      "name": "09 - Capture a payment id that does not exist",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/payments/pay_ZZZZZZZZZZZZZZ/capture",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount\": 50000,\n  \"currency\": \"INR\"\n}"
+        }
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test(\"Status is 400 Bad Request\", () => pm.response.to.have.status(400));",
+          "",
+          "pm.test(\"Error matches: 'The id provided does not exist'\", () => {",
+          "    const body = pm.response.json();",
+          "    const message = (body.error && body.error.description) ? body.error.description.toLowerCase() : \"\";",
+          "    pm.expect(message).to.include(\"does not exist\");",
+          "});"
+        ]}
+      }]
+    },
+    {
+      "name": "10 - Capture with the wrong HTTP method (route mismatch)",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/payments/{{authorizedPaymentId}}/capture"
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test(\"Status is 404 (route does not exist for GET)\", () => pm.response.to.have.status(404));",
+          "",
+          "pm.test(\"Error matches: 'requested URL was not found on the server'\", () => {",
+          "    const body = pm.response.json();",
+          "    const message = body.message ? body.message.toLowerCase() : \"\";",
+          "    pm.expect(message).to.include(\"not found\");",
+          "});",
+          "",
+          "// Capture is documented as POST-only. Sending GET to the same path",
+          "// should hit the gateway's route-matching layer rather than",
+          "// Razorpay's business logic — note the different response shape",
+          "// ({ message: ... } here, not { error: { description: ... } })."
+        ]}
+      }]
+    }
+  ],
+  "variable": [
+    { "key": "baseUrl", "value": "https://api.razorpay.com/v1" }
+  ]
+}

@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head><title>Generate a test payment</title></head>
+<body>
+<button id="pay">Pay ₹500 (test mode)</button>
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+<script>
+// IMPORTANT: when you create the order for this (POST /orders), include
+// "payment_capture": 0 in the body. Razorpay auto-captures payments by
+// default — with payment_capture left out or set to 1, the payment goes
+// straight to "captured" and there's nothing left to manually capture.
+// Setting it to 0 leaves the payment in "authorized" state, which is what
+// the Capture endpoint tests below actually need.
+//
+// 1. Replace YOUR_TEST_KEY_ID with your real test Key Id (safe to expose client-side).
+// 2. Replace ORDER_ID_HERE with the order id from that order (payment_capture: 0).
+// 3. Open this file in a browser, click Pay, and use the test card below:
+//    Visa: 4111 1111 1111 1111, any future expiry (e.g. 12/30), any 3-digit CVV.
+document.getElementById('pay').onclick = function () {
+    var rzp = new Razorpay({
+        key: "rzp_test_Tgez6rDsxFMtCQ",
+        amount: 50000,
+        currency: "INR",
+        order_id: "order_ThpEYJ36UogJGV",
+        name: "Portfolio Test",
+        handler: function (response) {
+            // This is the payment id you need — copy it into Postman as
+            // the environment variable 'authorizedPaymentId'.
+            document.body.innerHTML = "<h2>Payment ID: " + response.razorpay_payment_id + "</h2>";
+        },
+        prefill: { contact: "9999999999", email: "test@example.com" }
+    });
+    rzp.open();
+};
+</script>
+</body>
+</html>

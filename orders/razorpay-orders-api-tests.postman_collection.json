@@ -1,0 +1,378 @@
+{
+  "info": {
+    "name": "Razorpay Orders API Tests (Test Mode)",
+    "description": "Portfolio test suite against Razorpay's real Orders API in test mode. 15 cases covering validation, boundary conditions, business-rule gaps, and pagination/date filtering.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "basic",
+    "basic": [
+      { "key": "username", "value": "{{razorpayKeyId}}" },
+      { "key": "password", "value": "{{razorpayKeySecret}}" }
+    ]
+  },
+  "item": [
+    {
+      "name": "01 - Create order - valid amount and currency",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/orders",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount\": 50000,\n  \"currency\": \"INR\",\n  \"receipt\": \"receipt-{{$timestamp}}\"\n}"
+        }
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test(\"Status is 200 OK\", () => pm.response.to.have.status(200));",
+          "",
+          "pm.test(\"Order created with correct amount, currency, and status\", () => {",
+          "    const body = pm.response.json();",
+          "    pm.expect(body.entity).to.eql(\"order\");",
+          "    pm.expect(body.amount).to.eql(50000);",
+          "    pm.expect(body.currency).to.eql(\"INR\");",
+          "    pm.expect(body.status).to.eql(\"created\");",
+          "    pm.expect(body.id).to.match(/^order_/);",
+          "});",
+          "",
+          "pm.environment.set(\"lastOrderId\", pm.response.json().id);",
+          "pm.environment.set(\"lastOrderCreatedAt\", pm.response.json().created_at);"
+        ]}
+      }]
+    },
+    {
+      "name": "02 - Create order - missing amount",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/orders",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"currency\": \"INR\",\n  \"receipt\": \"receipt-{{$timestamp}}\"\n}"
+        }
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test(\"Status is 400 Bad Request\", () => pm.response.to.have.status(400));",
+          "",
+          "pm.test(\"Error identifies amount as the missing field\", () => {",
+          "    const body = pm.response.json();",
+          "    pm.expect(body.error.description.toLowerCase()).to.include(\"amount\");",
+          "});"
+        ]}
+      }]
+    },
+    {
+      "name": "03 - Create order - missing currency",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/orders",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount\": 50000,\n  \"receipt\": \"receipt-{{$timestamp}}\"\n}"
+        }
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test(\"Status is 400 Bad Request\", () => pm.response.to.have.status(400));",
+          "",
+          "pm.test(\"Error identifies currency as the missing field\", () => {",
+          "    const body = pm.response.json();",
+          "    pm.expect(body.error.description.toLowerCase()).to.include(\"currency\");",
+          "});"
+        ]}
+      }]
+    },
+    {
+      "name": "04 - Create order - amount below minimum",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/orders",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount\": 50,\n  \"currency\": \"INR\",\n  \"receipt\": \"receipt-{{$timestamp}}\"\n}"
+        }
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test(\"Status is 400 Bad Request\", () => pm.response.to.have.status(400));",
+          "",
+          "pm.test(\"Error indicates amount is below the minimum allowed\", () => {",
+          "    const body = pm.response.json();",
+          "    pm.expect(body.error.description.toLowerCase()).to.include(\"minimum\");",
+          "});"
+        ]}
+      }]
+    },
+    {
+      "name": "05 - Create order - negative amount",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/orders",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount\": -5000,\n  \"currency\": \"INR\",\n  \"receipt\": \"receipt-{{$timestamp}}\"\n}"
+        }
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test(\"Status is 400 Bad Request\", () => pm.response.to.have.status(400));",
+          "",
+          "pm.test(\"Negative amount is rejected, not silently coerced to positive\", () => {",
+          "    const body = pm.response.json();",
+          "    pm.expect(body.error).to.exist;",
+          "});"
+        ]}
+      }]
+    },
+    {
+      "name": "06 - Create order - non-integer amount",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/orders",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount\": 500.75,\n  \"currency\": \"INR\",\n  \"receipt\": \"receipt-{{$timestamp}}\"\n}"
+        }
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test(\"Status is 400 Bad Request\", () => pm.response.to.have.status(400));",
+          "",
+          "pm.test(\"Decimal amount is rejected — API requires integer subunits\", () => {",
+          "    const body = pm.response.json();",
+          "    pm.expect(body.error).to.exist;",
+          "});",
+          "",
+          "// NOTE: this is exactly the kind of bug that reaches production in payment",
+          "// systems when a front-end sends rupees as a float instead of paise as an integer."
+        ]}
+      }]
+    },
+    {
+      "name": "07 - Create order - invalid currency code",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/orders",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount\": 50000,\n  \"currency\": \"XYZ\",\n  \"receipt\": \"receipt-{{$timestamp}}\"\n}"
+        }
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test(\"Status is 400 Bad Request\", () => pm.response.to.have.status(400));",
+          "",
+          "pm.test(\"Error indicates unsupported/invalid currency\", () => {",
+          "    const body = pm.response.json();",
+          "    pm.expect(body.error.description.toLowerCase()).to.include(\"currency\");",
+          "});"
+        ]}
+      }]
+    },
+    {
+      "name": "08 - Create order - with notes metadata",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/orders",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount\": 75000,\n  \"currency\": \"INR\",\n  \"receipt\": \"receipt-{{$timestamp}}\",\n  \"notes\": {\n    \"customerRef\": \"QA-PORTFOLIO-01\",\n    \"channel\": \"web\"\n  }\n}"
+        }
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test(\"Status is 200 OK\", () => pm.response.to.have.status(200));",
+          "",
+          "pm.test(\"Notes metadata is stored and echoed back exactly\", () => {",
+          "    const body = pm.response.json();",
+          "    pm.expect(body.notes.customerRef).to.eql(\"QA-PORTFOLIO-01\");",
+          "    pm.expect(body.notes.channel).to.eql(\"web\");",
+          "});"
+        ]}
+      }]
+    },
+    {
+      "name": "09 - Create two orders with identical receipt (business rule gap)",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/orders",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount\": 30000,\n  \"currency\": \"INR\",\n  \"receipt\": \"FIXED-RECEIPT-001\"\n}"
+        }
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "// Run this request twice in a row (or via the collection runner set to 2 iterations)",
+          "// and inspect both responses manually, OR call this endpoint again below.",
+          "",
+          "pm.test(\"Status is 200 OK\", () => pm.response.to.have.status(200));",
+          "",
+          "pm.test(\"FINDING: duplicate receipt is accepted, not rejected\", () => {",
+          "    const body = pm.response.json();",
+          "    pm.expect(body.receipt).to.eql(\"FIXED-RECEIPT-001\");",
+          "    // This documents that Razorpay does NOT enforce receipt uniqueness —",
+          "    // if a client's reconciliation process assumes uniqueness, that",
+          "    // assumption must be enforced in their own application layer.",
+          "});"
+        ]}
+      }]
+    },
+    {
+      "name": "10 - Fetch order by valid ID",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/orders/{{lastOrderId}}"
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test(\"Status is 200 OK\", () => pm.response.to.have.status(200));",
+          "",
+          "pm.test(\"Fetched order matches the one created in test 01\", () => {",
+          "    const body = pm.response.json();",
+          "    pm.expect(body.id).to.eql(pm.environment.get(\"lastOrderId\"));",
+          "    pm.expect(body.amount).to.eql(50000);",
+          "    pm.expect(body.currency).to.eql(\"INR\");",
+          "});"
+        ]}
+      }]
+    },
+    {
+      "name": "11 - Fetch order by non-existent ID",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/orders/order_INVALIDID000000"
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test(\"Status is 400 (Razorpay returns 400 for unknown order ID, not 404)\", () => {",
+          "    pm.response.to.have.status(400);",
+          "});",
+          "",
+          "pm.test(\"Error clearly identifies the ID as not found/invalid\", () => {",
+          "    const body = pm.response.json();",
+          "    pm.expect(body.error).to.exist;",
+          "});"
+        ]}
+      }]
+    },
+    {
+      "name": "12 - List all orders",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/orders"
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test(\"Status is 200 OK\", () => pm.response.to.have.status(200));",
+          "",
+          "pm.test(\"Response is a paginated collection with expected shape\", () => {",
+          "    const body = pm.response.json();",
+          "    pm.expect(body.entity).to.eql(\"collection\");",
+          "    pm.expect(body.items).to.be.an(\"array\");",
+          "    pm.expect(body.count).to.be.a(\"number\");",
+          "});"
+        ]}
+      }]
+    },
+    {
+      "name": "13 - List orders with count parameter",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/orders?count=2"
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test(\"Status is 200 OK\", () => pm.response.to.have.status(200));",
+          "",
+          "pm.test(\"Count parameter limits the number of items returned\", () => {",
+          "    const body = pm.response.json();",
+          "    pm.expect(body.items.length).to.be.at.most(2);",
+          "});"
+        ]}
+      }]
+    },
+    {
+      "name": "14 - List orders filtered by date range",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/orders?from={{fromTimestamp}}&to={{toTimestamp}}"
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test(\"Status is 200 OK\", () => pm.response.to.have.status(200));",
+          "",
+          "pm.test(\"Every returned order's created_at actually falls within the requested range\", () => {",
+          "    const body = pm.response.json();",
+          "    const from = Number(pm.environment.get(\"fromTimestamp\"));",
+          "    const to = Number(pm.environment.get(\"toTimestamp\"));",
+          "    body.items.forEach(order => {",
+          "        pm.expect(order.created_at).to.be.at.least(from);",
+          "        pm.expect(order.created_at).to.be.at.most(to);",
+          "    });",
+          "});",
+          "",
+          "// This is deliberately stronger than 'the call returned 200' — filtering",
+          "// bugs (off-by-one on boundaries, timezone handling) are easy to miss",
+          "// if you only check that the response came back successfully."
+        ]}
+      }]
+    },
+    {
+      "name": "15 - Authentication failure with wrong key secret",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/orders",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "auth": {
+          "type": "basic",
+          "basic": [
+            { "key": "username", "value": "{{razorpayKeyId}}" },
+            { "key": "password", "value": "wrong_secret_value_on_purpose" }
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount\": 50000,\n  \"currency\": \"INR\",\n  \"receipt\": \"receipt-{{$timestamp}}\"\n}"
+        }
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test(\"Status is 401 Unauthorized\", () => pm.response.to.have.status(401));",
+          "",
+          "pm.test(\"Error indicates authentication failure, not a generic 400\", () => {",
+          "    const body = pm.response.json();",
+          "    pm.expect(body.error.description.toLowerCase()).to.include(\"auth\");",
+          "});"
+        ]}
+      }]
+    }
+  ],
+  "variable": [
+    { "key": "baseUrl", "value": "https://api.razorpay.com/v1" }
+  ]
+}

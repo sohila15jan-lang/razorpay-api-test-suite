@@ -1,0 +1,132 @@
+{
+  "info": {
+    "name": "Razorpay Customers API - Notes Value 512 Character Limit",
+    "description": "Boundary tests for the documented error 'Notes value cannot be greater than 512 characters' (400). Tests exactly 512 (should pass), 513 (should fail) and 1000 (should fail). Uses pre-request scripts to generate exact-length values so only length varies.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "basic",
+    "basic": [
+      { "key": "username", "value": "{{razorpayKeyId}}" },
+      { "key": "password", "value": "{{razorpayKeySecret}}" }
+    ]
+  },
+  "item": [
+    {
+      "name": "01 - Notes value of exactly 512 characters (boundary, should be accepted)",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/customers",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Notes Limit Test\",\n  \"contact\": \"+9198123{{$randomInt}}\",\n  \"email\": \"notes.{{$timestamp}}@example.com\",\n  \"notes\": {\n    \"note1\": \"{{notesValue}}\"\n  }\n}"
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": { "exec": [
+            "// Exactly 512 characters. A single repeated letter keeps length the only variable.",
+            "pm.variables.set(\"notesValue\", \"A\".repeat(512));"
+          ]}
+        },
+        {
+          "listen": "test",
+          "script": { "exec": [
+            "pm.test(\"Status is 200 OK (512 is the documented maximum, so it should be allowed)\", () => {",
+            "    pm.response.to.have.status(200);",
+            "});",
+            "",
+            "pm.test(\"Response echoes the full 512-character note value, unchanged\", () => {",
+            "    const body = pm.response.json();",
+            "    const stored = body.notes && body.notes.note1 ? body.notes.note1 : \"\";",
+            "    pm.expect(stored.length).to.eql(512);",
+            "});",
+            "",
+            "// The second test matters: a 200 alone would also pass if Razorpay",
+            "// silently truncated or dropped the note. Checking the stored length",
+            "// proves the whole value was kept."
+          ]}
+        }
+      ]
+    },
+    {
+      "name": "02 - Notes value of 513 characters (one over the limit, should be rejected)",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/customers",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Notes Limit Test\",\n  \"contact\": \"+9198123{{$randomInt}}\",\n  \"email\": \"notes.{{$timestamp}}@example.com\",\n  \"notes\": {\n    \"note1\": \"{{notesValue}}\"\n  }\n}"
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": { "exec": [
+            "pm.variables.set(\"notesValue\", \"A\".repeat(513));"
+          ]}
+        },
+        {
+          "listen": "test",
+          "script": { "exec": [
+            "pm.test(\"Status is 400 Bad Request\", () => {",
+            "    pm.response.to.have.status(400);",
+            "});",
+            "",
+            "pm.test(\"Error message mentions the 512-character limit\", () => {",
+            "    const body = pm.response.json();",
+            "    const message = (body.error && body.error.description) ? body.error.description.toLowerCase() : \"\";",
+            "    pm.expect(message).to.include(\"512\");",
+            "});",
+            "",
+            "// The guarded message line means that if the API wrongly returns 200,",
+            "// you get a clean 'expected 200 to equal 400' failure, not a script crash."
+          ]}
+        }
+      ]
+    },
+    {
+      "name": "03 - Notes value of 1000 characters (well over the limit, should be rejected)",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/customers",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Notes Limit Test\",\n  \"contact\": \"+9198123{{$randomInt}}\",\n  \"email\": \"notes.{{$timestamp}}@example.com\",\n  \"notes\": {\n    \"note1\": \"{{notesValue}}\"\n  }\n}"
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": { "exec": [
+            "pm.variables.set(\"notesValue\", \"A\".repeat(1000));"
+          ]}
+        },
+        {
+          "listen": "test",
+          "script": { "exec": [
+            "pm.test(\"Status is 400 Bad Request\", () => {",
+            "    pm.response.to.have.status(400);",
+            "});",
+            "",
+            "pm.test(\"Error message mentions the 512-character limit\", () => {",
+            "    const body = pm.response.json();",
+            "    const message = (body.error && body.error.description) ? body.error.description.toLowerCase() : \"\";",
+            "    pm.expect(message).to.include(\"512\");",
+            "});",
+            "",
+            "// If test 02 passes but this fails (or the reverse), the enforced limit",
+            "// differs from the documented one. Record where accepted flips to rejected."
+          ]}
+        }
+      ]
+    }
+  ],
+  "variable": [
+    { "key": "baseUrl", "value": "https://api.razorpay.com/v1" }
+  ]
+}

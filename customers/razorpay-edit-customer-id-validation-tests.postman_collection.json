@@ -1,0 +1,213 @@
+{
+  "info": {
+    "name": "Razorpay Customers API - Edit Customer (PUT) customer_id Validation",
+    "description": "Tests PUT /customers/{id}: a valid edit and proof it persisted, then the two documented customer_id errors ('id is not a valid id' for malformed ids, 'The id provided does not exist' for well-formed unknown ids). Error tests send an otherwise valid body so only the id varies.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "basic",
+    "basic": [
+      { "key": "username", "value": "{{razorpayKeyId}}" },
+      { "key": "password", "value": "{{razorpayKeySecret}}" }
+    ]
+  },
+  "item": [
+    {
+      "name": "01 - Setup: create a customer to edit",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/customers",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Original Customer\",\n  \"contact\": \"+9198123{{$randomInt}}\",\n  \"email\": \"original.{{$timestamp}}@example.com\"\n}"
+        }
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test(\"Status is 200 OK\", () => pm.response.to.have.status(200));",
+          "",
+          "pm.test(\"A customer id starting with cust_ was returned\", () => {",
+          "    const body = pm.response.json();",
+          "    pm.expect(body.id).to.match(/^cust_/);",
+          "});",
+          "",
+          "pm.environment.set(\"createdCustomerId\", pm.response.json().id);"
+        ]}
+      }]
+    },
+    {
+      "name": "02 - Edit customer with a valid id (baseline)",
+      "request": {
+        "method": "PUT",
+        "url": "{{baseUrl}}/customers/{{createdCustomerId}}",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"{{editedName}}\",\n  \"email\": \"{{editedEmail}}\",\n  \"contact\": \"{{editedContact}}\"\n}"
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": { "exec": [
+            "// Unique values each run, saved so test 03 can check they persisted.",
+            "pm.environment.set(\"editedName\", \"Edited Customer\");",
+            "pm.environment.set(\"editedEmail\", \"edited.\" + Date.now() + \"@example.com\");",
+            "pm.environment.set(\"editedContact\", \"+9198123\" + Math.floor(1000 + Math.random() * 9000));"
+          ]}
+        },
+        {
+          "listen": "test",
+          "script": { "exec": [
+            "pm.test(\"Status is 200 OK\", () => pm.response.to.have.status(200));",
+            "",
+            "pm.test(\"Response shows the new values on the same customer\", () => {",
+            "    const body = pm.response.json();",
+            "    pm.expect(body.id).to.eql(pm.environment.get(\"createdCustomerId\"));",
+            "    pm.expect(body.name).to.eql(pm.environment.get(\"editedName\"));",
+            "    pm.expect(body.email).to.eql(pm.environment.get(\"editedEmail\"));",
+            "});",
+            "",
+            "// This baseline proves editing works, so the error tests below are meaningful.",
+            "// Checking the fields (not just 200) matters: a malformed body can return 200",
+            "// with every field null, as you saw earlier on POST."
+          ]}
+        }
+      ]
+    },
+    {
+      "name": "03 - Fetch the customer to confirm the edit was saved",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/customers/{{createdCustomerId}}"
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test(\"Status is 200 OK\", () => pm.response.to.have.status(200));",
+          "",
+          "pm.test(\"Stored customer reflects the edit, not the original values\", () => {",
+          "    const body = pm.response.json();",
+          "    pm.expect(body.name).to.eql(pm.environment.get(\"editedName\"));",
+          "    pm.expect(body.email).to.eql(pm.environment.get(\"editedEmail\"));",
+          "});"
+        ]}
+      }]
+    },
+    {
+      "name": "04 - Edit with malformed id: plain text, no cust_ prefix",
+      "request": {
+        "method": "PUT",
+        "url": "{{baseUrl}}/customers/abc123",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Should Not Apply\",\n  \"email\": \"noapply.{{$timestamp}}@example.com\",\n  \"contact\": \"+9198123{{$randomInt}}\"\n}"
+        }
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test(\"Status is 400 Bad Request\", () => pm.response.to.have.status(400));",
+          "",
+          "pm.test(\"Error message says the id is not valid\", () => {",
+          "    const body = pm.response.json();",
+          "    const message = (body.error && body.error.description) ? body.error.description.toLowerCase() : \"\";",
+          "    pm.expect(message).to.include(\"not a valid id\");",
+          "    // Saved so test 07 can prove the two error messages differ.",
+          "    pm.environment.set(\"malformedIdMessage\", message);",
+          "});"
+        ]}
+      }]
+    },
+    {
+      "name": "05 - Edit with malformed id: correct prefix but too short",
+      "request": {
+        "method": "PUT",
+        "url": "{{baseUrl}}/customers/cust_abc",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Should Not Apply\",\n  \"email\": \"noapply.{{$timestamp}}@example.com\",\n  \"contact\": \"+9198123{{$randomInt}}\"\n}"
+        }
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test(\"Status is 400 Bad Request\", () => pm.response.to.have.status(400));",
+          "",
+          "pm.test(\"Error message says the id is not valid\", () => {",
+          "    const body = pm.response.json();",
+          "    const message = (body.error && body.error.description) ? body.error.description.toLowerCase() : \"\";",
+          "    pm.expect(message).to.include(\"not a valid id\");",
+          "});",
+          "",
+          "// If this returns 'does not exist' instead, the API checks only the cust_",
+          "// prefix, not the length. Record that as a finding."
+        ]}
+      }]
+    },
+    {
+      "name": "06 - Edit with id of the wrong entity type (order_ prefix, right length)",
+      "request": {
+        "method": "PUT",
+        "url": "{{baseUrl}}/customers/order_ThN9tfo7op6VMc",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Should Not Apply\",\n  \"email\": \"noapply.{{$timestamp}}@example.com\",\n  \"contact\": \"+9198123{{$randomInt}}\"\n}"
+        }
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test(\"Status is 400 Bad Request\", () => pm.response.to.have.status(400));",
+          "",
+          "pm.test(\"Error message is present and mentions the id\", () => {",
+          "    const body = pm.response.json();",
+          "    const message = (body.error && body.error.description) ? body.error.description.toLowerCase() : \"\";",
+          "    pm.expect(message).to.include(\"id\");",
+          "});",
+          "",
+          "// Exploratory: the docs do not say which error this id should trigger.",
+          "// Note the actual wording, then tighten this assertion to match."
+        ]}
+      }]
+    },
+    {
+      "name": "07 - Edit with well-formed id that does not exist",
+      "request": {
+        "method": "PUT",
+        "url": "{{baseUrl}}/customers/cust_ZZZZZZZZZZZZZZ",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Should Not Apply\",\n  \"email\": \"noapply.{{$timestamp}}@example.com\",\n  \"contact\": \"+9198123{{$randomInt}}\"\n}"
+        }
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test(\"Status is 400 Bad Request (docs say 400, not 404)\", () => pm.response.to.have.status(400));",
+          "",
+          "pm.test(\"Error message says the id does not exist\", () => {",
+          "    const body = pm.response.json();",
+          "    const message = (body.error && body.error.description) ? body.error.description.toLowerCase() : \"\";",
+          "    pm.expect(message).to.include(\"does not exist\");",
+          "});",
+          "",
+          "pm.test(\"Message differs from the malformed-id message in test 04\", () => {",
+          "    const body = pm.response.json();",
+          "    const message = (body.error && body.error.description) ? body.error.description.toLowerCase() : \"\";",
+          "    pm.expect(message).to.not.eql(pm.environment.get(\"malformedIdMessage\"));",
+          "});"
+        ]}
+      }]
+    }
+  ],
+  "variable": [
+    { "key": "baseUrl", "value": "https://api.razorpay.com/v1" }
+  ]
+}

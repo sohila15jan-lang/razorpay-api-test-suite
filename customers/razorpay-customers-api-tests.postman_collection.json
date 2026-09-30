@@ -1,0 +1,260 @@
+{
+  "info": {
+    "name": "Razorpay Customers API - Validation Error Tests",
+    "description": "Test cases mapped directly to Razorpay's documented Create Customer validation errors: invalid auth, invalid/short/malformed contact number, invalid/malformed email, name length and format, duplicate customer, and notes key limit.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "basic",
+    "basic": [
+      { "key": "username", "value": "{{razorpayKeyId}}" },
+      { "key": "password", "value": "{{razorpayKeySecret}}" }
+    ]
+  },
+  "item": [
+    {
+      "name": "01 - Create customer - valid request (happy path baseline)",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/customers",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Aisha Sharma\",\n  \"contact\": \"+91981234{{$randomInt}}\",\n  \"email\": \"aisha.{{$timestamp}}@example.com\"\n}"
+        }
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test(\"Status is 200 OK\", () => pm.response.to.have.status(200));",
+          "",
+          "pm.test(\"Customer created with matching name and email\", () => {",
+          "    const body = pm.response.json();",
+          "    pm.expect(body.entity).to.eql(\"customer\");",
+          "    pm.expect(body.name).to.eql(\"Aisha Sharma\");",
+          "    pm.expect(body.id).to.match(/^cust_/);",
+          "});",
+          "",
+          "// This baseline exists so test 07 (duplicate customer) has a known-good",
+          "// customer to collide against.",
+          "pm.environment.set(\"lastCustomerEmail\", pm.response.json().email);",
+          "pm.environment.set(\"lastCustomerContact\", pm.response.json().contact);"
+        ]}
+      }]
+    },
+    {
+      "name": "02 - Invalid API key/secret",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/customers",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "auth": {
+          "type": "basic",
+          "basic": [
+            { "key": "username", "value": "rzp_test_invalidkey000000" },
+            { "key": "password", "value": "invalid_secret_on_purpose" }
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Aisha Sharma\",\n  \"contact\": \"+919812340000\",\n  \"email\": \"aisha@example.com\"\n}"
+        }
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test(\"Status is 401 Unauthorized\", () => pm.response.to.have.status(401));",
+          "",
+          "pm.test(\"Error message matches documented text: 'The api key/secret provided is invalid'\", () => {",
+          "    const body = pm.response.json();",
+          "    pm.expect(body.error.description.toLowerCase()).to.include(\"key/secret\");",
+          "    pm.expect(body.error.description.toLowerCase()).to.include(\"invalid\");",
+          "});"
+        ]}
+      }]
+    },
+    {
+      "name": "03 - Contact number too short (fewer than 8 digits)",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/customers",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Rahul Mehta\",\n  \"contact\": \"+9112345\",\n  \"email\": \"rahul.{{$timestamp}}@example.com\"\n}"
+        }
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test(\"Status is 400 Bad Request\", () => pm.response.to.have.status(400));",
+          "",
+          "pm.test(\"Error matches: 'Contact number should be at least 8 digits, including country code'\", () => {",
+          "    const body = pm.response.json();",
+          "    pm.expect(body.error.description.toLowerCase()).to.include(\"8 digits\");",
+          "});"
+        ]}
+      }]
+    },
+    {
+      "name": "04 - Contact number contains invalid characters",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/customers",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Rahul Mehta\",\n  \"contact\": \"+91-981-ABC-1234\",\n  \"email\": \"rahul.{{$timestamp}}@example.com\"\n}"
+        }
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test(\"Status is 400 Bad Request\", () => pm.response.to.have.status(400));",
+          "",
+          "pm.test(\"Error matches: 'Contact number contains invalid characters, only digits and + symbol are allowed'\", () => {",
+          "    const body = pm.response.json();",
+          "    pm.expect(body.error.description.toLowerCase()).to.include(\"invalid characters\");",
+          "});",
+          "",
+          "// Note the distinction from test 03: this checks CHARACTER validity,",
+          "// test 03 checks LENGTH. Two different rules, two different error",
+          "// strings, easy to conflate if you only write one 'bad contact' test."
+        ]}
+      }]
+    },
+    {
+      "name": "05 - Email is not a valid email address",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/customers",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Rahul Mehta\",\n  \"contact\": \"+9198123{{$randomInt}}\",\n  \"email\": \"not-an-email-address\"\n}"
+        }
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test(\"Status is 400 Bad Request\", () => pm.response.to.have.status(400));",
+          "",
+          "pm.test(\"Error matches: 'The email must be a valid email address'\", () => {",
+          "    const body = pm.response.json();",
+          "    pm.expect(body.error.description.toLowerCase()).to.include(\"valid email\");",
+          "});"
+        ]}
+      }]
+    },
+    {
+      "name": "06 - Name exceeds 50 characters",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/customers",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"This Is A Deliberately Very Long Customer Name That Exceeds Fifty Characters\",\n  \"contact\": \"+9198123{{$randomInt}}\",\n  \"email\": \"longname.{{$timestamp}}@example.com\"\n}"
+        }
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test(\"Status is 400 Bad Request\", () => pm.response.to.have.status(400));",
+          "",
+          "pm.test(\"Error matches: 'The name may not be greater than 50 characters'\", () => {",
+          "    const body = pm.response.json();",
+          "    pm.expect(body.error.description.toLowerCase()).to.include(\"50 characters\");",
+          "});"
+        ]}
+      }]
+    },
+    {
+      "name": "07 - Name format is invalid (disallowed characters)",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/customers",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Rahul_Mehta#123!!\",\n  \"contact\": \"+9198123{{$randomInt}}\",\n  \"email\": \"badname.{{$timestamp}}@example.com\"\n}"
+        }
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test(\"Status is 400 Bad Request\", () => pm.response.to.have.status(400));",
+          "",
+          "pm.test(\"Error matches: 'The name format is invalid'\", () => {",
+          "    const body = pm.response.json();",
+          "    pm.expect(body.error.description.toLowerCase()).to.include(\"name format\");",
+          "});",
+          "",
+          "// Documented allowed characters are alphanumeric, period, apostrophe,",
+          "// forward slash, @ and parentheses — underscore, hash and exclamation",
+          "// marks above are deliberately outside that allowed set."
+        ]}
+      }]
+    },
+    {
+      "name": "08 - Customer already exists for the merchant",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/customers",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Aisha Sharma\",\n  \"contact\": \"{{lastCustomerContact}}\",\n  \"email\": \"{{lastCustomerEmail}}\",\n  \"fail_existing\": \"1\"\n}"
+        }
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test(\"Status is 400 Bad Request\", () => pm.response.to.have.status(400));",
+          "",
+          "pm.test(\"Error matches: 'Customer already exists for the merchant'\", () => {",
+          "    const body = pm.response.json();",
+          "    pm.expect(body.error.description.toLowerCase()).to.include(\"already exists\");",
+          "});",
+          "",
+          "// This depends on test 01 having run first in the same collection run,",
+          "// since it reuses that customer's exact email and contact.",
+          "// fail_existing:'1' explicitly tells Razorpay to error instead of",
+          "// silently returning the existing customer — worth its own test,",
+          "// since fail_existing:'0' (the default) behaves completely differently."
+        ]}
+      }]
+    },
+    {
+      "name": "09 - Notes object exceeds 15 keys",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/customers",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Nitin Verma\",\n  \"contact\": \"+9198123{{$randomInt}}\",\n  \"email\": \"nitin.{{$timestamp}}@example.com\",\n  \"notes\": {\n    \"k1\": \"v1\", \"k2\": \"v2\", \"k3\": \"v3\", \"k4\": \"v4\", \"k5\": \"v5\",\n    \"k6\": \"v6\", \"k7\": \"v7\", \"k8\": \"v8\", \"k9\": \"v9\", \"k10\": \"v10\",\n    \"k11\": \"v11\", \"k12\": \"v12\", \"k13\": \"v13\", \"k14\": \"v14\", \"k15\": \"v15\",\n    \"k16\": \"v16\"\n  }\n}"
+        }
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test(\"Status is 400 Bad Request\", () => pm.response.to.have.status(400));",
+          "",
+          "pm.test(\"Error matches: 'Notes should not have more than 15 keys'\", () => {",
+          "    const body = pm.response.json();",
+          "    pm.expect(body.error.description.toLowerCase()).to.include(\"15 keys\");",
+          "});",
+          "",
+          "// Boundary companion test worth adding next: exactly 15 keys should",
+          "// SUCCEED (200), not just 16 keys failing — testing only one side of",
+          "// a boundary is a common gap. Consider adding '09b - exactly 15 keys'",
+          "// as a follow-up once you're comfortable with this pattern."
+        ]}
+      }]
+    }
+  ],
+  "variable": [
+    { "key": "baseUrl", "value": "https://api.razorpay.com/v1" }
+  ]
+}
